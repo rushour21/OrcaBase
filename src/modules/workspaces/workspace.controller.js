@@ -20,3 +20,20 @@ export const listUserWorkspaces = async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 };
+
+export const inviteUser = async (req, res) => {
+  try {
+    const { userId, role } = req.body;
+
+    const invite = await workspaceService.inviteUser({
+      workspace: req.workspace,
+      inviterId: req.user.id,
+      invitedUserId: userId,
+      role,
+    });
+
+    res.status(201).json(invite);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+};

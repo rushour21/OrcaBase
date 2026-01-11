@@ -62,3 +62,54 @@ export const listUserWorkspaces = async (userId) => {
 
   return result.rows;
 };
+
+export const inviteUser = async ({
+  workspace,
+  inviterId,
+  invitedUserId,
+  role,
+}) => {
+  // 1. Only admin can invite
+  if (workspace.role !== "admin") {
+    throw new Error("Admin access required");
+  }
+
+  // 2. Ensure invited user exists
+  const userExists = await pool.query(
+    `SELECT id FROM users WHERE id = $1`,
+    [invitedUserId]
+  );
+  if (!userExists.rowCount) {
+    throw new Error("User does not exist");
+  }
+
+  // 3. Prevent duplicate membership
+  const alreadyMember = await pool.query(
+    `
+    SELECT 1 FROM workspace_members
+    WHERE workspace_id = $1 AND user_id = $2
+    `,
+    [workspace.id, invitedUserId]
+  );
+  if (alreadyMember.rowCount) {
+    throw new Error("User already a member");
+  }
+
+  // 4. Create invite
+  const result = await pool.query(
+    `
+    INSERT INTO workspace_invites (
+      workspace_id,
+      invited_user_id,
+      role,
+      status
+    )
+    VALUES ($1, $2, $3, 'pending')
+    RETURNING id, role, status, created_at
+    `,
+    [workspace.id, invitedUserId, role]
+  );
+
+  return result.rows[0];
+};
+
