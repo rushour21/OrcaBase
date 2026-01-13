@@ -9,6 +9,7 @@ export const createWorkspace = async (userId, { name }) => {
 
   try {
     await client.query("BEGIN");
+    console.log("Creating workspace:", name, "for user:", userId);
 
     // 1. Create workspace
     const workspaceResult = await client.query(

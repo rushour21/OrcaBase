@@ -2,6 +2,7 @@ import * as workspaceService from "./workspace.service.js";
 
 export const createWorkspace = async (req, res) => {
   try {
+    console.log("Listing workspaces for user:", req.user.id);
     const workspace = await workspaceService.createWorkspace(
       req.user.id,
       req.body

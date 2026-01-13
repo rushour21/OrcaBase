@@ -16,7 +16,7 @@ services:
       - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
 
   qdrant:
-    image: qdrant/qdrant:v1.8.1
+    image: qdrant/qdrant:latest
     container_name: ai_qdrant
     restart: always
     ports:
