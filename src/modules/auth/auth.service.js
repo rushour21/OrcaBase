@@ -24,6 +24,14 @@ export const signup = async ({ email, password }) => {
      RETURNING id, email, created_at`,
     [email, passwordHash]
   );
+  
+  const token = jwt.sign(
+    { userId: result.rows[0].id },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRES_IN }
+  );
+
+  result.rows[0].accessToken = token;
 
   return result.rows[0];
 };
