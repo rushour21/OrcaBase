@@ -19,7 +19,7 @@ const llm = new ChatOpenAI({
 export async function indexPdf({ filePath, originalName, workspaceId, userId }) {
   await ensureCollection("workspace_documents");
   const client = await pool.connect();
-
+ 
   try {
     await client.query("BEGIN");
 
