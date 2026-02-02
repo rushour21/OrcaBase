@@ -1,4 +1,6 @@
 import { pool } from "../../../config/db.js";
+import { qdrant } from "../../utils/qdrant.js";
+import fs from "fs";
 
 export const createWorkspace = async (userId, { name }) => {
   if (!name || name.trim().length < 2) {
@@ -10,6 +12,7 @@ export const createWorkspace = async (userId, { name }) => {
   try {
     await client.query("BEGIN");
 
+    console.log("userId FROM workspace.service.js", userId);
     // 1. Create workspace (Now returning the auto-generated public_api_key)
     const workspaceResult = await client.query(
       `INSERT INTO workspaces (name, created_by)
@@ -65,6 +68,114 @@ export const listUserWorkspaces = async (userId) => {
   return result.rows;
 };
 
+export const updateWorkspace = async (workspaceId, userId, { name }) => {
+  if (!name || name.trim().length < 2) {
+    throw new Error("Workspace name is required");
+  }
+
+  const client = await pool.connect();
+
+  try {
+    // Verify user is admin of this workspace
+    const memberCheck = await client.query(
+      `SELECT role FROM workspace_members WHERE workspace_id = $1 AND user_id = $2`,
+      [workspaceId, userId]
+    );
+
+    if (memberCheck.rows.length === 0) {
+      throw new Error("Access denied");
+    }
+
+    if (memberCheck.rows[0].role !== "admin") {
+      throw new Error("Admin access required");
+    }
+
+    // Update workspace name
+    const result = await client.query(
+      `UPDATE workspaces SET name = $1 WHERE id = $2 RETURNING id, name, public_api_key`,
+      [name.trim(), workspaceId]
+    );
+
+    return result.rows[0];
+  } finally {
+    client.release();
+  }
+};
+
+export const deleteWorkspace = async (workspaceId, userId) => {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    // 1. Verify user is the creator (only creator can delete workspace)
+    const workspaceCheck = await client.query(
+      `SELECT created_by FROM workspaces WHERE id = $1`,
+      [workspaceId]
+    );
+
+    if (workspaceCheck.rows.length === 0) {
+      throw new Error("Workspace not found");
+    }
+
+    if (workspaceCheck.rows[0].created_by !== userId) {
+      throw new Error("Only workspace creator can delete the workspace");
+    }
+
+    // 2. Get all documents to delete files and Qdrant vectors
+    const documentsResult = await client.query(
+      `SELECT id, file_path FROM documents WHERE workspace_id = $1`,
+      [workspaceId]
+    );
+
+    // 3. Delete from Qdrant (all vectors for this workspace)
+    try {
+      await qdrant.delete("workspace_documents", {
+        filter: {
+          must: [{ key: "workspace_id", match: { value: workspaceId } }]
+        }
+      });
+    } catch (qdrantError) {
+      console.error("Failed to delete from Qdrant:", qdrantError);
+      // Continue even if Qdrant fails
+    }
+
+    // 4. Delete files from disk
+    for (const doc of documentsResult.rows) {
+      if (doc.file_path) {
+        try {
+          if (fs.existsSync(doc.file_path)) {
+            fs.unlinkSync(doc.file_path);
+          }
+        } catch (fsError) {
+          console.error("Failed to delete file:", fsError);
+          // Continue even if file deletion fails
+        }
+      }
+    }
+
+    // 5. Delete from database in correct order (respecting foreign keys)
+    await client.query(`DELETE FROM document_chunks WHERE workspace_id = $1`, [workspaceId]);
+    await client.query(`DELETE FROM documents WHERE workspace_id = $1`, [workspaceId]);
+    await client.query(`DELETE FROM chat_messages WHERE session_id IN (SELECT id FROM chat_sessions WHERE workspace_id = $1)`, [workspaceId]);
+    await client.query(`DELETE FROM chat_sessions WHERE workspace_id = $1`, [workspaceId]);
+    await client.query(`DELETE FROM workspace_usage WHERE workspace_id = $1`, [workspaceId]);
+    await client.query(`DELETE FROM workspace_invites WHERE workspace_id = $1`, [workspaceId]);
+    await client.query(`DELETE FROM workspace_members WHERE workspace_id = $1`, [workspaceId]);
+    await client.query(`DELETE FROM subscriptions WHERE workspace_id = $1`, [workspaceId]);
+    await client.query(`DELETE FROM workspaces WHERE id = $1`, [workspaceId]);
+
+    await client.query("COMMIT");
+
+    return { success: true, id: workspaceId };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
 export const inviteUser = async ({
   workspace,
   inviterId,
@@ -115,3 +226,40 @@ export const inviteUser = async ({
   return result.rows[0];
 };
 
+
+export const getWorkspaceMembers = async (workspaceId) => {
+  const result = await pool.query(
+    `
+    SELECT 
+      u.id, 
+      u.email, 
+      wm.role, 
+      wm.created_at as joined_at,
+      'active' as status
+    FROM workspace_members wm
+    JOIN users u ON wm.user_id = u.id
+    WHERE wm.workspace_id = $1
+    ORDER BY wm.created_at DESC
+    `,
+    [workspaceId]
+  );
+
+  // Also fetch pending invites to show them in the list?
+  // The UI shows them as 'pending', so yes.
+  const invitesResult = await pool.query(
+    `
+    SELECT 
+      id, 
+      email, 
+      role, 
+      created_at as joined_at,
+      'pending' as status
+    FROM workspace_invites
+    WHERE workspace_id = $1 AND status = 'pending'
+    ORDER BY created_at DESC
+    `,
+    [workspaceId]
+  );
+
+  return [...result.rows, ...invitesResult.rows];
+};

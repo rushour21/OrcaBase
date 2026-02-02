@@ -1,7 +1,8 @@
 import { QdrantClient } from "@qdrant/js-client-rest";
 
 export const qdrant = new QdrantClient({
-  url: "http://localhost:6333",
+  url: process.env.QDRANT_URL,
+  apiKey: process.env.QDRANT_API_KEY,
   checkCompatibility: false,
 });
 
@@ -23,8 +24,8 @@ export async function ensureCollection(collectionName, vectorSize = 1536) {
       await qdrant.createCollection(collectionName, {
         // 1. Dense Vectors (for Semantic/Meaning search)
         vectors: {
-          size: vectorSize,
-          distance: "Cosine",
+          size: vectorSize, 
+          distance: "Cosine", 
         },
         // 2. Sparse Vectors (for Keyword search)
         sparse_vectors: {

@@ -19,7 +19,7 @@ const llm = new ChatOpenAI({
 export async function indexPdf({ filePath, originalName, workspaceId, userId }) {
   await ensureCollection("workspace_documents");
   const client = await pool.connect();
- 
+
   try {
     await client.query("BEGIN");
 
@@ -83,6 +83,18 @@ export async function indexPdf({ filePath, originalName, workspaceId, userId }) 
     await client.query("UPDATE documents SET status = 'indexed' WHERE id = $1", [documentId]);
     await client.query("COMMIT");
 
+    /* ---------- 5️⃣ DELETE UPLOADED FILE ---------- */
+    // After successful indexing, delete the file from disk to save space
+    try {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        console.log(`Deleted uploaded file: ${filePath}`);
+      }
+    } catch (cleanupError) {
+      // Log but don't fail the entire operation if file deletion fails
+      console.error("Failed to delete uploaded file:", cleanupError);
+    }
+
     return { documentId, chunks: chunks.length };
   } catch (err) {
     await client.query("ROLLBACK");
@@ -93,89 +105,91 @@ export async function indexPdf({ filePath, originalName, workspaceId, userId }) 
   }
 }
 
-// export async function answerQuery({ prompt, workspaceApiKey, sessionId = null, externalUserId = null }) {
-//   const client = await pool.connect();
+export async function answerQuery({ prompt, workspaceApiKey, sessionId = null, externalUserId = null }) {
+  const client = await pool.connect();
 
-//   try {
-//     console.log("Answering query for workspace API Key:", workspaceApiKey);
-//     // 1. Resolve internal workspace_id from the public API Key
-//     const wsRes = await client.query(
-//       "SELECT id FROM workspaces WHERE public_api_key = $1",
-//       [workspaceApiKey]
-//     );
-//     if (wsRes.rows.length === 0) throw new Error("Invalid API Key");
-//     const workspaceId = wsRes.rows[0].id;
+  try {
+    console.log("Answering query for workspace API Key:", workspaceApiKey);
+    // 1. Resolve internal workspace_id from the public API Key
+    const wsRes = await client.query(
+      "SELECT id FROM workspaces WHERE public_api_key = $1",
+      [workspaceApiKey]
+    );
+    if (wsRes.rows.length === 0) throw new Error("Invalid API Key");
+    const workspaceId = wsRes.rows[0].id;
+    console.log("Workspace ID:", workspaceId);
 
-//     await client.query("BEGIN");
+    await client.query("BEGIN");
 
-//     // 2. Handle Session (Create if it's the first message)
-//     let currentSessionId = sessionId;
-//     if (!currentSessionId) {
-//       const sessRes = await client.query(
-//         `INSERT INTO chat_sessions (workspace_id, external_user_id) 
-//          VALUES ($1, $2) RETURNING id`,
-//         [workspaceId, externalUserId]
-//       );
-//       currentSessionId = sessRes.rows[0].id;
-//     }
+    // 2. Handle Session (Create if it's the first message)
+    let currentSessionId = sessionId;
+    if (!currentSessionId) {
+      const sessRes = await client.query(
+        `INSERT INTO chat_sessions (workspace_id, external_user_id) 
+         VALUES ($1, $2) RETURNING id`,
+        [workspaceId, externalUserId]
+      );
+      currentSessionId = sessRes.rows[0].id;
+    }
 
-//     // 3. Fetch History (Last 6 messages for context)
-//     const historyRes = await client.query(
-//       `SELECT role, content FROM chat_messages 
-//        WHERE session_id = $1 ORDER BY created_at DESC LIMIT 6`,
-//       [currentSessionId]
-//     );
-//     const history = historyRes.rows.reverse();
+    // 3. Fetch History (Last 6 messages for context)
+    const historyRes = await client.query(
+      `SELECT role, content FROM chat_messages 
+       WHERE session_id = $1 ORDER BY created_at DESC LIMIT 6`,
+      [currentSessionId]
+    );
+    const history = historyRes.rows.reverse();
 
-//     // 4. RAG: Search Qdrant
-//     const queryVector = await embeddings.embedQuery(prompt);
-//     const searchResults = await qdrant.search("workspace_documents", {
-//       vector: queryVector,
-//       filter: { must: [{ key: "workspace_id", match: { value: workspaceId } }] },
-//       limit: 3,
-//       with_payload: true
-//     });
+    // 4. RAG: Search Qdrant
+    const queryVector = await embeddings.embedQuery(prompt);
+    const searchResults = await qdrant.search("workspace_documents", {
+      vector: queryVector,
+      filter: { must: [{ key: "workspace_id", match: { value: workspaceId } }] },
+      limit: 3,
+      with_payload: true
+    });
 
-//     const context = searchResults.map(p => p.payload.content).join("\n\n---\n\n");
+    const context = searchResults.map(p => p.payload.content).join("\n\n---\n\n");
 
-//     // 5. LLM Call with Context + History
-//     const response = await llm.invoke([
-//       ["system", `Answer using ONLY this context: ${context || "No context found."}`],
-//       ...history.map(m => [m.role, m.content]),
-//       ["user", prompt]
-//     ]);
+    // 5. LLM Call with Context + History
+    const response = await llm.invoke([
+      ["system", `Answer using ONLY this context: ${context || "No context found."}`],
+      ...history.map(m => [m.role, m.content]),
+      ["user", prompt]
+    ]);
 
-//     // 6. Save messages & Update Usage
-//     await client.query(
-//       `INSERT INTO chat_messages (session_id, role, content) 
-//        VALUES ($1, 'user', $2), ($1, 'assistant', $3)`,
-//       [currentSessionId, prompt, response.content]
-//     );
+    // 6. Save messages & Update Usage
+    await client.query(
+      `INSERT INTO chat_messages (session_id, role, content) 
+       VALUES ($1, 'user', $2), ($1, 'assistant', $3)`,
+      [currentSessionId, prompt, response.content]
+    );
 
-//     const monthYear = new Date().toISOString().slice(0, 7); // '2026-01'
-//     await client.query(
-//       `INSERT INTO workspace_usage (workspace_id, month_year, total_queries, total_tokens)
-//        VALUES ($1, $2, 1, $3)
-//        ON CONFLICT (workspace_id, month_year) 
-//        DO UPDATE SET total_queries = workspace_usage.total_queries + 1, 
-//                      total_tokens = workspace_usage.total_tokens + $3`,
-//       [workspaceId, monthYear, response.usage_metadata?.total_tokens || 0]
-//     );
+    const monthYear = new Date().toISOString().slice(0, 7); // '2026-01'
+    await client.query(
+      `INSERT INTO workspace_usage (workspace_id, month_year, total_queries, total_tokens)
+       VALUES ($1, $2, 1, $3)
+       ON CONFLICT (workspace_id, month_year) 
+       DO UPDATE SET total_queries = workspace_usage.total_queries + 1, 
+                     total_tokens = workspace_usage.total_tokens + $3`,
+      [workspaceId, monthYear, response.usage_metadata?.total_tokens || 0]
+    );
 
-//     await client.query("COMMIT");
+    await client.query("COMMIT");
 
-//     return {
-//       answer: response.content,
-//       sessionId: currentSessionId
-//     };
+    return {
+      answer: response.content,
+      sessionId: currentSessionId
+    };
 
-//   } catch (err) {
-//     await client.query("ROLLBACK");
-//     throw err;
-//   } finally {
-//     client.release();
-//   }
-// }
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 
 export async function answerWithRAG({
   workspaceId,

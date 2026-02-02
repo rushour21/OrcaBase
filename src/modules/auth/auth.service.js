@@ -24,7 +24,7 @@ export const signup = async ({ email, password }) => {
      RETURNING id, email, created_at`,
     [email, passwordHash]
   );
-  
+
   const token = jwt.sign(
     { userId: result.rows[0].id },
     process.env.JWT_SECRET,
@@ -38,9 +38,12 @@ export const signup = async ({ email, password }) => {
 
 export const login = async ({ email, password }) => {
   const result = await pool.query(
-    "SELECT id, password_hash FROM users WHERE email = $1",
+    `SELECT id, password_hash
+   FROM users
+   WHERE email = $1 AND auth_provider = 'email'`,
     [email]
   );
+
 
   if (!result.rows.length) {
     throw new Error("Invalid credentials");
@@ -59,5 +62,11 @@ export const login = async ({ email, password }) => {
     { expiresIn: process.env.JWT_EXPIRES_IN }
   );
 
-  return { accessToken: token };
+  return {
+    accessToken: token,
+    user: {
+      id: user.id,
+      email: email
+    }
+  };
 };

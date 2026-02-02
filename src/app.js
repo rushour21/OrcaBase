@@ -7,20 +7,24 @@ import conversationRoutes from "./modules/conversations/conversation.routes.js";
 import adminConversationRoutes from "./modules/admin-conversations/adminConversation.routes.js";
 import dbRoutes from "./modules/database_integration/database.routes.js";
 import dbChatRoutes from "./modules/database_chat/routes/databaseChat.routes.js";
+import oauthRoutes from "./modules/auth/oauth/oauth.routes.js";
 import cors from "cors";
 import path from "path";
+import passport from "../config/passport.js";
 import { fileURLToPath } from 'url'; // Required for ES Modules
 
 const app = express();
 app.use(cors());
 
 app.use(express.json());
+app.use(passport.initialize());
 
 // 1. Manually define __dirname for ES Modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 app.use("/api/auth", authRoutes);
+app.use("/auth", oauthRoutes);
 app.use("/api/workspaces", workspaceRoutes);
 app.use("/api/invites", inviteRoutes);
 app.use("/api/rag", ragRoutes);
