@@ -33,8 +33,19 @@ app.use("/api/admin/conversations", adminConversationRoutes);
 app.use("/api/db", dbRoutes);
 app.use("/api/database-chat", dbChatRoutes);
 
+app.get("/", (req, res) => {
+  res.status(200).json({
+    status: "ok", 
+    service: "OrcaBase API",
+    environment: process.env.NODE_ENV || "production",
+    timestamp: new Date().toISOString(),
+  });
+});
+
+
 
 // This line makes everything in the 'public' folder accessible via URL
 app.use(express.static(path.join(__dirname, '../public')));
+
 
 export default app;
