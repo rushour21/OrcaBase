@@ -7,14 +7,13 @@ passport.use(
     {
       clientID: process.env.GITHUB_CLIENT_ID,
       clientSecret: process.env.GITHUB_CLIENT_SECRET,
-      callbackURL: "/auth/github/callback",
+      callbackURL: process.env.GITHUB_CALLBACK_URL,
       scope: ["user:email"],
     },
     async (accessToken, refreshToken, profile, done) => {
       try {
         let email = profile.emails?.[0]?.value;
 
-        // 🔴 GitHub often hides email → fetch manually
         if (!email) {
           const res = await fetch("https://api.github.com/user/emails", {
             headers: {
@@ -24,7 +23,6 @@ passport.use(
           });
 
           const emails = await res.json();
-
           const primaryEmail = emails.find(
             (e) => e.primary && e.verified
           );
@@ -49,3 +47,4 @@ passport.use(
     }
   )
 );
+
