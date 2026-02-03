@@ -13,7 +13,7 @@ router.get(
   passport.authenticate("google", { session: false }),
   (req, res) => {
     res.redirect(
-      `http://localhost:5174/oauth-success?token=${req.user.token}`
+      `${process.env.FRONTEND_URL}/oauth-success?token=${req.user.token}`
     );
   }
 );
@@ -28,7 +28,7 @@ router.get(
   passport.authenticate("github", { session: false }),
   (req, res) => {
     res.redirect(
-      `http://localhost:5174/oauth-success?token=${req.user.token}`
+      `${process.env.FRONTEND_URL}/oauth-success?token=${req.user.token}`
     );
   }
 );
