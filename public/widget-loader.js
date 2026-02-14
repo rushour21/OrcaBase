@@ -54,7 +54,7 @@ document.body.appendChild(bubble);
   });
 
   const iframe = document.createElement('iframe');
-  iframe.src = `http://localhost:5174/embed/chat?apiKey=${apiKey}`; // Your React App URL
+  iframe.src = `${FRONTEND_URL}/embed/chat?apiKey=${apiKey}`; // Your React App URL
   iframe.style.width = '100%';
   iframe.style.height = '100%';
   iframe.style.border = 'none';
