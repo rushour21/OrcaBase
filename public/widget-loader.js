@@ -54,7 +54,7 @@ document.body.appendChild(bubble);
   });
 
   const iframe = document.createElement('iframe');
-  iframe.src = `${FRONTEND_URL}/embed/chat?apiKey=${apiKey}`; // Your React App URL
+  iframe.src = `${process.env.FRONTEND_URL}/embed/chat?apiKey=${apiKey}`; // Your React App URL
   iframe.style.width = '100%';
   iframe.style.height = '100%';
   iframe.style.border = 'none';
