@@ -1,4 +1,7 @@
 // public/widget-loader.js
+import dotenv from "dotenv";
+dotenv.config();
+
 (function() {
   const script = document.currentScript;
   const apiKey = script.getAttribute('data-api-key');
