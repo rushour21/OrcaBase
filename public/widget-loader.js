@@ -1,7 +1,4 @@
 // public/widget-loader.js
-import dotenv from "dotenv";
-dotenv.config();
-
 (function() {
   const script = document.currentScript;
   const apiKey = script.getAttribute('data-api-key');
@@ -57,7 +54,7 @@ document.body.appendChild(bubble);
   });
 
   const iframe = document.createElement('iframe');
-  iframe.src = `${process.env.FRONTEND_URL}/embed/chat?apiKey=${apiKey}`; // Your React App URL
+  iframe.src = `https://orcabase.in/embed/chat?apiKey=${apiKey}`; // Your React App URL
   iframe.style.width = '100%';
   iframe.style.height = '100%';
   iframe.style.border = 'none';
